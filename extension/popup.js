@@ -1,3 +1,8 @@
+// Configuration
+const CONFIG = {
+  enableTeaser: false
+};
+
 async function summarizePage() {
   const loadingEl = document.getElementById('loading');
   const errorEl = document.getElementById('error');
@@ -34,48 +39,88 @@ async function summarizePage() {
       throw new Error('Not enough content to summarize on this page.');
     }
 
-    // Generate headline
-    const headlineSummarizer = await Summarizer.create({
-      type: 'headline',
-      length: 'short',
-      format: 'plain-text',
-      outputLanguage: 'en'
-    });
-    const headline = await headlineSummarizer.summarize(pageText);
+    // Create all summarizers in parallel
+    const summarizerPromises = [
+      Summarizer.create({
+        type: 'headline',
+        length: 'short',
+        format: 'plain-text',
+        outputLanguage: 'en'
+      }),
+      Summarizer.create({
+        type: 'tldr',
+        length: 'long',
+        format: 'plain-text',
+        outputLanguage: 'en'
+      }),
+      Summarizer.create({
+        type: 'key-points',
+        length: 'long',
+        format: 'markdown',
+        outputLanguage: 'en'
+      })
+    ];
+
+    // Add teaser summarizer if enabled
+    if (CONFIG.enableTeaser) {
+      summarizerPromises.splice(1, 0, Summarizer.create({
+        type: 'teaser',
+        length: 'short',
+        format: 'plain-text',
+        outputLanguage: 'en'
+      }));
+    }
+
+    const summarizers = await Promise.all(summarizerPromises);
+
+    let headlineSummarizer, teaserSummarizer, tldrSummarizer, keyPointsSummarizer;
+
+    if (CONFIG.enableTeaser) {
+      [headlineSummarizer, teaserSummarizer, tldrSummarizer, keyPointsSummarizer] = summarizers;
+    } else {
+      [headlineSummarizer, tldrSummarizer, keyPointsSummarizer] = summarizers;
+    }
+
+    // Run all summarizations in parallel
+    const summaryPromises = [
+      headlineSummarizer.summarize(pageText),
+      tldrSummarizer.summarize(pageText),
+      keyPointsSummarizer.summarize(pageText)
+    ];
+
+    if (CONFIG.enableTeaser) {
+      summaryPromises.splice(1, 0, teaserSummarizer.summarize(pageText));
+    }
+
+    const results = await Promise.all(summaryPromises);
+
+    let headline, teaser, tldr, keyPoints;
+
+    if (CONFIG.enableTeaser) {
+      [headline, teaser, tldr, keyPoints] = results;
+    } else {
+      [headline, tldr, keyPoints] = results;
+    }
+
+    // Update UI
     headlineEl.textContent = headline;
-    headlineSummarizer.destroy();
 
-    // Generate teaser
-    const teaserSummarizer = await Summarizer.create({
-      type: 'teaser',
-      length: 'short',
-      format: 'plain-text',
-      outputLanguage: 'en'
-    });
-    const teaser = await teaserSummarizer.summarize(pageText);
-    teaserEl.textContent = teaser;
-    teaserSummarizer.destroy();
+    if (CONFIG.enableTeaser) {
+      teaserEl.textContent = teaser;
+      teaserEl.style.display = 'block';
+    } else {
+      teaserEl.style.display = 'none';
+    }
 
-    // Generate tldr
-    const tldrSummarizer = await Summarizer.create({
-      type: 'tldr',
-      length: 'long',
-      format: 'plain-text',
-      outputLanguage: 'en'
-    });
-    const tldr = await tldrSummarizer.summarize(pageText);
     tldrEl.innerHTML = tldr.replace(/\n/g, '<br>');
-    tldrSummarizer.destroy();
-
-    // Generate key points
-    const keyPointsSummarizer = await Summarizer.create({
-      type: 'key-points',
-      length: 'long',
-      format: 'markdown',
-      outputLanguage: 'en'
-    });
-    const keyPoints = await keyPointsSummarizer.summarize(pageText);
     keyPointsListEl.innerHTML = keyPoints.replace(/\n/g, '<br>');
+
+    // Cleanup summarizers
+    headlineSummarizer.destroy();
+    if (CONFIG.enableTeaser) {
+      teaserSummarizer.destroy();
+    }
+    tldrSummarizer.destroy();
     keyPointsSummarizer.destroy();
 
     loadingEl.style.display = 'none';
