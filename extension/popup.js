@@ -2,19 +2,23 @@ async function summarizePage() {
   const loadingEl = document.getElementById('loading');
   const errorEl = document.getElementById('error');
   const summaryEl = document.getElementById('summary');
+  const headlineEl = document.getElementById('headline');
+  const teaserEl = document.getElementById('teaser');
+  const tldrEl = document.getElementById('tldr');
+  const keyPointsListEl = document.getElementById('keyPointsList');
 
   try {
-    if (!window.ai || !window.ai.summarizer) {
-      throw new Error('AI Summarizer API not available. Please use Chrome 128+ with AI features enabled.');
+    if (!('Summarizer' in self)) {
+      throw new Error('AI Summarizer API not available. Please use Chrome 138+ with AI features enabled.');
     }
 
-    const capabilities = await window.ai.summarizer.capabilities();
-    if (capabilities.available === 'no') {
+    const availability = await Summarizer.availability();
+    if (availability === 'unavailable') {
       throw new Error('AI Summarizer is not available on this device.');
     }
 
-    if (capabilities.available === 'after-download') {
-      throw new Error('AI model is downloading. Please wait and try again in a few minutes.');
+    if (availability === 'downloadable') {
+      throw new Error('AI model needs to be downloaded. Please wait and try again in a few minutes.');
     }
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -30,18 +34,52 @@ async function summarizePage() {
       throw new Error('Not enough content to summarize on this page.');
     }
 
-    const summarizer = await window.ai.summarizer.create({
-      type: 'tl;dr',
-      length: 'medium'
+    // Generate headline
+    const headlineSummarizer = await Summarizer.create({
+      type: 'headline',
+      length: 'short',
+      format: 'plain-text',
+      outputLanguage: 'en'
     });
+    const headline = await headlineSummarizer.summarize(pageText);
+    headlineEl.textContent = headline;
+    headlineSummarizer.destroy();
 
-    const summary = await summarizer.summarize(pageText);
+    // Generate teaser
+    const teaserSummarizer = await Summarizer.create({
+      type: 'teaser',
+      length: 'short',
+      format: 'plain-text',
+      outputLanguage: 'en'
+    });
+    const teaser = await teaserSummarizer.summarize(pageText);
+    teaserEl.textContent = teaser;
+    teaserSummarizer.destroy();
+
+    // Generate tldr
+    const tldrSummarizer = await Summarizer.create({
+      type: 'tldr',
+      length: 'long',
+      format: 'plain-text',
+      outputLanguage: 'en'
+    });
+    const tldr = await tldrSummarizer.summarize(pageText);
+    tldrEl.innerHTML = tldr.replace(/\n/g, '<br>');
+    tldrSummarizer.destroy();
+
+    // Generate key points
+    const keyPointsSummarizer = await Summarizer.create({
+      type: 'key-points',
+      length: 'long',
+      format: 'markdown',
+      outputLanguage: 'en'
+    });
+    const keyPoints = await keyPointsSummarizer.summarize(pageText);
+    keyPointsListEl.innerHTML = keyPoints.replace(/\n/g, '<br>');
+    keyPointsSummarizer.destroy();
 
     loadingEl.style.display = 'none';
-    summaryEl.textContent = summary;
     summaryEl.style.display = 'block';
-
-    summarizer.destroy();
 
   } catch (error) {
     loadingEl.style.display = 'none';
