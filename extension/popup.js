@@ -56,7 +56,7 @@ async function summarizePage() {
       Summarizer.create({
         type: 'key-points',
         length: 'long',
-        format: 'markdown',
+        format: 'plain-text',
         outputLanguage: 'en'
       })
     ];
