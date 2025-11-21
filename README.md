@@ -144,13 +144,17 @@ All summarizers run in parallel using `Promise.all()` for optimal performance.
 
 ```text
 chrome-summarizer-extension/
-├── extension/
+├── extension/             # Chrome extension files
 │   ├── manifest.json      # Extension manifest
 │   ├── popup.html         # Extension popup UI
 │   ├── popup.js           # Main logic and AI integration
-│   └── icon.png           # Extension icon
-└── README.md
+│   ├── icon.png           # Extension icon (128x128)
+│   └── icon.svg           # Extension icon (SVG)
+├── package.json           # Minimal package metadata
+└── README.md              # This file
 ```
+
+**Note**: This extension uses vanilla JavaScript and requires no build process or dependencies.
 
 ### Making Changes
 
