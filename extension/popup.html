@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 400px;
+      min-height: 200px;
+      padding: 16px;
+      margin: 0;
+      font-family: -apple-system, system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    #loading {
+      color: #666;
+      text-align: center;
+      padding: 40px 0;
+    }
+    #error {
+      color: #d32f2f;
+      padding: 16px;
+      background: #ffebee;
+      border-radius: 4px;
+      display: none;
+    }
+    #summary {
+      display: none;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #3498db;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Summarizing page...</p>
+  </div>
+  <div id="error"></div>
+  <div id="summary"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+chrome-summarizer-extension
