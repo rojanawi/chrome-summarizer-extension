@@ -23,7 +23,18 @@ async function summarizePage() {
     }
 
     if (availability === 'downloadable') {
-      throw new Error('AI model needs to be downloaded. Please wait and try again in a few minutes.');
+      try {
+        await Summarizer.create({
+          outputLanguage: 'en',
+          monitor(m) {
+            m.addEventListener('downloadprogress', (e) => {
+              console.log(`Downloaded ${e.loaded * 100}%`);
+            });
+          }
+        });
+      } catch (e) {
+        throw new Error('AI model needs to be downloaded. Please wait and try again in a few minutes.');
+      }
     }
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
