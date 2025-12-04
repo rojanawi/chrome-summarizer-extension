@@ -1,7 +1,16 @@
-// Configuration
-const CONFIG = {
-  enableTeaser: false
-};
+// Helper to send message with retry (handles service worker wake-up)
+async function sendMessageWithRetry(message, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await chrome.runtime.sendMessage(message);
+      return response;
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      // Wait a bit for service worker to wake up
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+}
 
 async function summarizePage() {
   const loadingEl = document.getElementById('loading');
@@ -13,32 +22,30 @@ async function summarizePage() {
   const keyPointsListEl = document.getElementById('keyPointsList');
 
   try {
-    if (!('Summarizer' in self)) {
-      throw new Error('AI Summarizer API not available. Please use Chrome 138+ with AI features enabled.');
-    }
-
-    const availability = await Summarizer.availability();
-    if (availability === 'unavailable') {
-      throw new Error('AI Summarizer is not available on this device.');
-    }
-
-    if (availability === 'downloadable') {
-      try {
-        await Summarizer.create({
-          outputLanguage: 'en',
-          monitor(m) {
-            m.addEventListener('downloadprogress', (e) => {
-              console.log(`Downloaded ${e.loaded * 100}%`);
-            });
-          }
-        });
-      } catch (e) {
-        throw new Error('AI model needs to be downloaded. Please wait and try again in a few minutes.');
-      }
-    }
-
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabId = tab.id;
 
+    // First check if we already have a summary for this tab
+    const statusResponse = await sendMessageWithRetry({ action: 'getStatus', tabId });
+
+    if (statusResponse.status === 'completed') {
+      // Summary already exists, display it
+      displaySummary(statusResponse.summary);
+      return;
+    }
+
+    if (statusResponse.status === 'pending') {
+      // Summarization in progress, wait for it
+      const response = await chrome.runtime.sendMessage({ action: 'getSummary', tabId });
+      if (response.success) {
+        displaySummary(response.summary);
+      } else {
+        throw new Error(response.error);
+      }
+      return;
+    }
+
+    // Need to start new summarization - extract page content first
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: extractPageContent
@@ -50,98 +57,48 @@ async function summarizePage() {
       throw new Error('Not enough content to summarize on this page.');
     }
 
-    // Create all summarizers in parallel
-    const summarizerPromises = [
-      Summarizer.create({
-        type: 'headline',
-        length: 'short',
-        format: 'plain-text',
-        outputLanguage: 'en'
-      }),
-      Summarizer.create({
-        type: 'tldr',
-        length: 'long',
-        format: 'plain-text',
-        outputLanguage: 'en'
-      }),
-      Summarizer.create({
-        type: 'key-points',
-        length: 'long',
-        format: 'plain-text',
-        outputLanguage: 'en'
-      })
-    ];
+    // Start summarization in background
+    const response = await chrome.runtime.sendMessage({
+      action: 'startSummarization',
+      tabId,
+      pageText
+    });
 
-    // Add teaser summarizer if enabled
-    if (CONFIG.enableTeaser) {
-      summarizerPromises.splice(1, 0, Summarizer.create({
-        type: 'teaser',
-        length: 'short',
-        format: 'plain-text',
-        outputLanguage: 'en'
-      }));
-    }
-
-    const summarizers = await Promise.all(summarizerPromises);
-
-    let headlineSummarizer, teaserSummarizer, tldrSummarizer, keyPointsSummarizer;
-
-    if (CONFIG.enableTeaser) {
-      [headlineSummarizer, teaserSummarizer, tldrSummarizer, keyPointsSummarizer] = summarizers;
+    if (response.success) {
+      displaySummary(response.summary);
     } else {
-      [headlineSummarizer, tldrSummarizer, keyPointsSummarizer] = summarizers;
+      throw new Error(response.error);
     }
-
-    // Run all summarizations in parallel
-    const summaryPromises = [
-      headlineSummarizer.summarize(pageText),
-      tldrSummarizer.summarize(pageText),
-      keyPointsSummarizer.summarize(pageText)
-    ];
-
-    if (CONFIG.enableTeaser) {
-      summaryPromises.splice(1, 0, teaserSummarizer.summarize(pageText));
-    }
-
-    const results = await Promise.all(summaryPromises);
-
-    let headline, teaser, tldr, keyPoints;
-
-    if (CONFIG.enableTeaser) {
-      [headline, teaser, tldr, keyPoints] = results;
-    } else {
-      [headline, tldr, keyPoints] = results;
-    }
-
-    // Update UI
-    headlineEl.textContent = headline;
-
-    if (CONFIG.enableTeaser) {
-      teaserEl.textContent = teaser;
-      teaserEl.style.display = 'block';
-    } else {
-      teaserEl.style.display = 'none';
-    }
-
-    tldrEl.innerHTML = tldr.replace(/\n/g, '<br>');
-    keyPointsListEl.innerHTML = keyPoints.replace(/\n/g, '<br>');
-
-    // Cleanup summarizers
-    headlineSummarizer.destroy();
-    if (CONFIG.enableTeaser) {
-      teaserSummarizer.destroy();
-    }
-    tldrSummarizer.destroy();
-    keyPointsSummarizer.destroy();
-
-    loadingEl.style.display = 'none';
-    summaryEl.style.display = 'block';
 
   } catch (error) {
     loadingEl.style.display = 'none';
     errorEl.textContent = error.message;
     errorEl.style.display = 'block';
   }
+}
+
+function displaySummary(summary) {
+  const loadingEl = document.getElementById('loading');
+  const summaryEl = document.getElementById('summary');
+  const headlineEl = document.getElementById('headline');
+  const teaserEl = document.getElementById('teaser');
+  const tldrEl = document.getElementById('tldr');
+  const keyPointsListEl = document.getElementById('keyPointsList');
+
+  headlineEl.textContent = summary.headline;
+
+  if (summary.enableTeaser && summary.teaser) {
+    teaserEl.textContent = summary.teaser;
+    teaserEl.style.display = 'block';
+  } else {
+    teaserEl.style.display = 'none';
+  }
+
+  tldrEl.innerHTML = summary.tldr.replace(/\n/g, '<br>');
+  keyPointsListEl.innerHTML = summary.keyPoints.replace(/\n/g, '<br>');
+
+  loadingEl.style.display = 'none';
+  summaryEl.style.display = 'block';
 }
 
 function extractPageContent() {

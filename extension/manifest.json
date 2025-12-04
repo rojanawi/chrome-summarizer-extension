@@ -3,12 +3,15 @@
   "name": "AI Summarizer",
   "version": "1.0.0",
   "description": "Summarize web pages using Chrome's built-in AI",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "storage"],
   "action": {
     "default_popup": "popup.html",
     "default_icon": "icon.png"
   },
   "icons": {
     "128": "icon.png"
+  },
+  "background": {
+    "service_worker": "background.js"
   }
 }
